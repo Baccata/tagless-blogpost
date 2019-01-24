@@ -3,7 +3,7 @@ lazy val myproject = project
   .settings(
     libraryDependencies ++= Seq(
       "org.typelevel" %% "cats-effect" % "1.1.0",
-      "com.typesafe.akka" %% "akka-actor" % "2.5.19"
+      "org.typelevel" %% "cats-mtl-core" % "0.4.0"
     )
   )
 

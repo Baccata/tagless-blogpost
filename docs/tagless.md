@@ -5,7 +5,7 @@ way of structuring programs.
 
 ## Preambule
 
-Though it may be required to understand the contents, this article will **not** give an explanation of what the following things are, and expects from the reader some very basic understanding.
+Though it may be required to understand the contents, this article will **not** give an explanation of what the following notions are, and expects from the reader some basic understanding.
 
 * higher-kinded types
 * typeclasses
@@ -16,9 +16,20 @@ This article was originally written in Markdown, and the snippets are verified f
 The only dependencies required to compile the snippets are the following (in SBT syntax)
 
 ```scala  
-  "org.typelevel" %% "cats-effect" % "1.1.0",
-  "com.typesafe.akka" %% "akka-actor" % "2.5.19"
+"org.typelevel" %% "cats-effect" % "1.1.0",
+"org.typelevel" %% "cats-mtl-core" % "0.4.0"
 ```
+
+To reduce the amount of code in each snippet, we're making the following import available everywhere in the article.
+
+```scala mdoc
+// typeclass instances and syntactic sugar
+import cats._
+import cats.data._
+import cats.implicits._
+```
+
+Note : this import is quite helpful to discover features from cats. When you know what you're doing, you should strive to import only the necessary.
 
 ## Intro
 
@@ -31,16 +42,16 @@ It also allows you to build a mental framework for problem solving that is clear
 
 ### What does it cost ?
 
-Performance-wise, next to nothing. Training-wise, it depends on your ability to reason in abstract concepts, but there are countless people willing to help in the community for the sheer satisfaction of knowledge transfer. The developers I know who actually took the time to understand the concepts involved have
+Performance-wise, next to nothing. Training-wise, it depends on your ability to reason in abstractions. However, there are countless people willing to help in the community for the sheer satisfaction of knowledge transfer. The developers I know who actually took the time to understand the concepts involved have
 expressed a fair amount of satisfaction doing so.
 
 ### What is it ?
 
-**tagless final** is essentially a way of writing interfaces (and implementations of these interfaces), which involves removing the knowledge of which concrete **effect context** is involved in it.
+**tagless final** is essentially a way of writing interfaces (and implementations of these interfaces), which involves abstracting over **effect context**.
 
 ```scala mdoc
 // F[_] is an abstract effect context
-trait KeyValueStore[F[_]]{
+trait KVStore[F[_]]{
   def put(key : String, value : String) : F[Unit]
   def get(key : String) : F[Option[String]]
   def delete(key : String) : F[Unit]
@@ -49,13 +60,22 @@ trait KeyValueStore[F[_]]{
 
 ### Wait ? context ?
 
-When you create an interface, if you're not familiar with the tagless technique,you're most likely deciding (knowingly or not) on a context its methods will work against. For instance, you could have written our `KeyValueStore` interface sporting a synchronous context as such :
+When you create an interface, if you're not familiar with the tagless technique,you're most likely deciding (knowingly or not) on a context its methods will work against. For instance, you could have written our `KVStore` interface sporting a synchronous context as such :
 
 ```scala mdoc
-trait KeyValueStoreSync {
+trait KVStoreSync {
   def put(key : String, value : String) : Unit
   def get(key : String) : Option[String]
   def delete(key : String) : Unit
+}
+
+// which is completely equivalent to
+
+trait KVStoreId {
+  // cats.Id[A] = A
+  def put(key : String, value : String) : Id[Unit]
+  def get(key : String) : Id[Option[String]]
+  def delete(key : String) : Id[Unit]
 }
 ```
 
@@ -64,31 +84,20 @@ Or you could decide for it to work against an asynchronous context, as such :
 ```scala mdoc
 import scala.concurrent.Future
 
-trait KeyValueStoreFuture {
+trait KVStoreFuture {
   def put(key : String, value : String) : Future[Unit]
   def get(key : String) : Future[Option[String]]
   def delete(key : String) : Future[Unit]
 }
 ```
 
+The tagless interface does not reference `Future`, nor `Id`, nor any other **effect type**, but rather declares that there is one, called `F`, and that what `F` is does not matter at this point.
+
 ### You mentioned "effects" ?
 
 The definition of effect is "a change which is a result or consequence of an action or other cause." When you write a program, you likely have to address some concerns that might have an impact on the overall computation, such as validation, optionality, error handling ... these are effects. In functional programming, effects are usually associated to datatypes that have the **capability** to support/handle them, such as `Either`, `Option`, `Try`.
 
-### So what's the "effect" exposed by the synchronous interface you wrote?
-
-It's the effect of no-effect. You can reify it as such :
-
-```scala mdoc
-type Id[A] = A
-trait KeyValueStoreId {
-  def put(key : String, value : String) : Id[Unit]
-  def get(key : String) : Id[Option[String]]
-  def delete(key : String) : Id[Unit]
-}
-```
-
-### What if the methods of my interfaces work with heterogenous effects ?
+### What if different methods of my interfaces work with different effects ?
 
 The should not. You should always have some reason for grouping
 methods together in an interface, such as some rule binding them :
@@ -110,21 +119,17 @@ As for the typed returned by this expression ? It does not matter when you write
 
 ### How is that code even going to compile ?
 
-The rule is that each piece of logic should declare the minimal set of **capabilities** your effect type needs to support for it to work. In this case, we need **sequentiality** as the calls need to be composed in a sequential manner (ie the for-comprehension).
+The rule is that each piece of logic should declare the minimal set of **capabilities** the effect type `F` needs to support for it to work. In this case, we need **sequentiality** as the calls need to be composed in a sequential manner (ie the for-comprehension).
 
-That capability of sequentiality is often provided by the **Monad** interface,
-which is a minimal construct that lets you compose calls sequentially
+That capability of sequentiality is provided by what is often called the **Monad** typeclass (interface). It is the least powerful construct that lets you compose calls sequentially.
 
-In the scala ecosystem, the two main libraries that provide that interface (amongst many others) are [cats](https://github.com/typelevel/cats) and [scalaz](https://github.com/scalaz/scalaz)
+In the scala ecosystem, the two main libraries that provide that typeclass/interface are [cats](https://github.com/typelevel/cats) and [scalaz](https://github.com/scalaz/scalaz)
 
 With cats, the code at call site looks like this :
 
 ```scala mdoc
-import cats.Monad
-import cats.implicits._
-
-def test[F[_] : Monad] // Declaring the capability the code needs
-    (kvStore : KeyValueStore[F]) : F[Boolean] = {
+def verify[F[_] : Monad] // Declaring the capability the code needs
+    (kvStore : KVStore[F]) : F[Boolean] = {
   import kvStore._
   for {
     _     <- put("key", "value")
@@ -135,80 +140,28 @@ def test[F[_] : Monad] // Declaring the capability the code needs
 
 ### How is that generic function called ?
 
-It needs an implementation of `KeyValueStore`. Let's go ahead and implement one.
+It needs an implementation of `KVStore`. Let's go ahead and implement one.
 
 ## Version 1
 
-For the sake of the article, we'll start one based on an akka actor in order to isolate the in-memory state and manipulate it a thread-safe way. We'll use the [ask pattern](https://doc.akka.io/docs/akka/2.5/actors.html#ask-send-and-receive-future) to communicate with the Actor holding the state, which involves `Future`
+For the sake of giving a simple example, we'll start one with a dirty implementation that uses mutability :
 
-### The protocol
-
-Let's start by defining an ADT that will mirror the interface and serve as a protocol for communicating with the Actor.
+### The implementation
 
 ```scala mdoc
-sealed trait KeyValueProtocol
-case class Put(key : String, value : String) extends KeyValueProtocol
-case class Get(key : String) extends KeyValueProtocol
-case class Delete(key : String) extends KeyValueProtocol
-```
+import scala.collection.mutable.{ Map => MMap }
 
-### The actor
+class MutableKVStore(map : MMap[String, String])
+extends KVStore[Id] {
 
-Then, the actor itself
+  def put(key : String, value : String) : Id[Unit] =
+    map += (key -> value)
 
-```scala mdoc
-import akka.actor._
+  def get(key : String) : Id[Option[String]] =
+    map.get(key)
 
-class KeyValueActor() extends Actor {
-  def withState(map : Map[String, String]) : Receive = {
-    case Put(key, value) =>
-      sender ! context.become(withState(map + (key -> value)))
-    case Get(key) =>
-      sender ! map.get(key)
-    case Delete(key)     =>
-      sender ! context.become(withState(map - key))
-  }
-  def receive = withState(Map.empty)
-}
-
-object KeyValueActor {
-  def props() = Props(new KeyValueActor())
-}
-```
-
-We're also creating a factory method to reduce the boilerplate in following snippets.
-
-```scala mdoc
-def withActor[A](f : ActorRef => A) : A = {
-  val system = ActorSystem()
-  val kvActor : ActorRef = system.actorOf(KeyValueActor.props())
-  val res = f(kvActor)
-  system.terminate()
-  res
-}
-```
-
-### The KeyValueStore implementation
-
-```scala mdoc
-import akka.actor._
-import akka.pattern.ask
-import akka.util._
-import scala.concurrent.duration._
-
-class ActorKeyValueStoreFuture(ref : ActorRef, timeout : FiniteDuration)
-extends KeyValueStore[Future]{
-
-  private implicit val askTimeout = Timeout(timeout)
-
-  def put(key : String, value : String) =
-    (ref ?  Put(key, value)).mapTo[Unit]
-
-  def get(key : String) =
-    (ref ?  Get(key)).mapTo[Option[String]]
-
-  def delete(key : String) =
-    (ref ?  Delete(key)).mapTo[Unit]
+  def delete(key : String) : Id[Unit] =
+    map -= key
 
 }
 ```
@@ -216,158 +169,243 @@ extends KeyValueStore[Future]{
 ### The call site
 
 ```scala mdoc
-withActor { kvActor =>
+{
+  val kvStore : KVStore[Id] =
+    new MutableKVStore(MMap.empty)
 
-  // Bootstrapping
-  val kvStore : KeyValueStore[Future] =
-    new ActorKeyValueStoreFuture(kvActor, 500.millis)
-
-  // Necessary to get an instance Monad[Future]
-  import scala.concurrent.ExecutionContext.Implicits.global
-  import cats.instances.future.catsStdInstancesForFuture
-
-  // Calling logic
-  val resultFuture : Future[Boolean] = test(kvStore)
-
-  // Waiting for the result
-  scala.concurrent.Await.result(resultFuture, 1.second)
+  verify(kvStore)
 }
 ```
 
-### Is that it ... ?
+We've implemented a dirty/dumb KVStore, and asserted that our generic `test` function works against it.
 
-No. Ideally you also want the implementation to abstract over the **effect context**, but similarly to the example, you often have to call upon external constructs and libraries that do not (such as the `ask` pattern from akka).
-
-The approach is to **lift** the effect type/mechanism these libraries elected to use into your abstract effect type `F`.
+If you're wondering, it works because a `Monad` instance is provided for `cats.Id`. I recommend implementing one yourself, it is trivially done and can help with building an instinct for the `Monad` abstraction
 
 ## Version 2
 
-Let's change our implementation to further defer the selection of the effect type. The first version had it target Future directly. In this iteration, we
-will lift the `Future` into an abstract `F`. In order to do that, we will use capabilities provided from [cats-effect](https://github.com/typelevel/cats-effect). That library provides datatypes and typeclasses (capabilities) to generically deal with synchronous/asynchronous/concurrent computations in a convenient and boilerplate free manner.
+As a rule of thumbs, you should avoid relying mutability. That is unless you're implementing a performant-criticial piece of logic. Let's provide an implementation that manipulates state in a referentially transparent manner. For that, we'll use the `State` datatype. Eugene Yokota wrote a decent [blog entry](http://eed3si9n.com/herding-cats/State.html) about it that I recommend to read if you are not familiar with it.
 
-### So how do I turn a Future to an F ?
-
-There is no typeclass that expresses the ability to lift a `Future` into an abstract `F`. However, there is one that provides the ability to lift `cats.effect.IO` into an abstract `F`. It is called `LiftIO`. Conveniently, `IO` supports a `fromFuture` method. With it, we can modify our `KeyValueStore` implementation as such :
+### The implementation
 
 ```scala mdoc
-import akka.actor._
-import akka.pattern.ask
-import akka.util._
+type Data = Map[String, String]
+type StateEffect[A] = State[Data, A]
 
-import cats.effect._
+object StateKVStore extends KVStore[StateEffect]{
 
-import scala.concurrent._
-import duration._
+  def put(key : String, value : String) : StateEffect[Unit] =
+    State.modify(_ + (key -> value))
 
-class ActorKeyValueStore[F[_] : LiftIO]
-    (ref : ActorRef, timeout : FiniteDuration)
-  extends KeyValueStore[F]{
+  def get(key : String) : StateEffect[Option[String]] =
+    State.inspect(map => map.get(key))
 
-  // The lifting function
-  def liftFuture[A](futureA : => Future[A]) : F[A] =
-    LiftIO[F].liftIO(IO.fromFuture(IO(futureA)))
-
-  private implicit val askTimeout = Timeout(timeout)
-
-  def put(key : String, value : String) =
-    liftFuture((ref ?  Put(key, value)).mapTo[Unit])
-
-  def get(key : String) =
-    liftFuture((ref ?  Get(key)).mapTo[Option[String]])
-
-  def delete(key : String) =
-    liftFuture((ref ?  Delete(key)).mapTo[Unit])
-
+  def delete(key : String) : StateEffect[Unit] =
+    State.modify(_ - key)
 }
 ```
 
-### What about call site ?
-
-What changes is that we've added a requirement on `F` to support the capability of lifting an `IO` into it. This capability is not supported by `Future`, but `IO` can be trivially lifted into an `IO`, therefore it does support the `LiftIO` capability.
+### The call site
 
 ```scala mdoc
-withActor { kvActor =>
-  // Bootstrapping
-  val kvStore : KeyValueStore[IO] =
-    new ActorKeyValueStore(kvActor, 500.millis)
+{
+  val kvStore : KVStore[StateEffect] =
+    StateKVStore
 
-  // Calling the logic
-  val resultInEffect : IO[Boolean] = test(kvStore)
-
-  // Getting the result
-  resultInEffect.unsafeRunSync()
+  verify(kvStore)
+    .runA(Map.empty) // setting the initial state
+    .value // getting the value
 }
 ```
+
+As you can see, even though the **effect type** changed from `Id` to `State`, calling the `verify` method did not require any glue code, because both datatypes support `sequentiality` via the presence of lawful `Monad` typeclass instances.
+
+In the `State` iteration, the only difference is the calls to "run" the state and unpack the boolean value, but the `verify` function has remained the same.
+
+### Is that it ... ?
+
+Ideally, the implementation also needs to abstract over the **effect context**, and refer the **capabilities** rather than **datatypes**. The reason is that **capabilities** can be supported by several datatypes, and reversely a single **datatype** potentially supports more capabilities than a piece of logic actually needs.
+
+Expressing the signature of a construct in terms of **capabilities** rather than **datatypes** is an approach to inversion of control that abides by the least power principle and increases separation of concerns.
+
+The **cats** and **scalaz** ecosystem provides **typeclasses** encoding of
+a fair number of **capabilities**, which are usually enough to express your logic.
+
+## Capabilities, typeclasses and datatypes
+
+Before we continue, I'd like to point out the great [infographic](https://github.com/tpolecat/cats-infographic) by Rob Norris that describes types/typeclasses provided by the **cats** library, and their hierachy.
+
+TODO : insert table
+
+## Version 3
+
+This time, we'll be manipulating state through the `MonadState` typeclass.
+It is provided by the [cats-mtl](https://github.com/typelevel/cats-mtl) library. We'll start by adding some imports :
+
+```scala mdoc
+import cats.mtl._
+import cats.mtl.implicits._
+```
+
+### The implementation
+
+```scala mdoc
+type StateCapa[F[_]] = MonadState[F, Data]
+
+class KVStoreImpl[F[_] : StateCapa]
+extends KVStore[F]{
+
+  val state = implicitly[StateCapa[F]]
+
+  def put(key : String, value : String) : F[Unit] =
+    state.modify(_ + (key -> value))
+
+  def get(key : String) : F[Option[String]] =
+    state.inspect(map => map.get(key))
+
+  def delete(key : String) : F[Unit] =
+    state.modify(_ - key)
+}
+```
+
+### The call site
+
+```scala mdoc
+{
+  // StateEffect supports the capability StateCapa
+  // needed by the implementation, because cats-mtl
+  // provides an instance of the MonadState typeclasses
+  // the datatype State
+  val kvStore : KVStore[StateEffect] =
+    new KVStoreImpl
+
+  verify(kvStore)
+    .runA(Map.empty) // setting the initial state
+    .value // getting the value
+}
+```
+
+As you can see, nothing changes at call site.
 
 ## But still, what did we gain ?
 
-If you place yourself at a particular instant in the early life of a codebase, there is not much point gain. You know all the concerns your application needs to handle and you can elect one effect type that will work. In the latest iteration for instance, the effect type elected was `cats.effect.IO`.
+If you place yourself at a particular instant in the early life of a codebase, there is not much point gain. You know all the concerns your application needs to handle and you can elect one effect type that will work. In the latest iteration for instance, the effect type elected was `cats.data.State`.
 
-However, the point of the approach is to prevent glue-code from being needed when you amend parts of it.
+However, the point of the approach is that it facilitates pivoting. Let's add some requirements, and decide that deleting a key that does not exist from the store should result in an error.
 
-For instance, say you need to address two new concerns, **optionality** and **erroring** . At the **end of the world** of the application (typically the main method), the effect-type will be impacted as you will need to add **layers** to it, each layer reflecting a particular concern.
+### Proving the compatibility
 
-```scala mdoc 
-import cats.data._
-import cats.effect._
-
-type Error = String
-
-type AsyncLayer[A] = IO[A]
-type OptionLayer[A] = OptionT[AsyncLayer, A]
-type ErrorLayer[A] = EitherT[OptionLayer, Error, A]
-
-type ComplexEffect[A] = ErrorLayer[A]
-```
-
-The magic of the approach then unravels, as absolutely no change is required for our existing logic to run in a more complex datatype.
+If we are to add erroring logic, the `StateEffect` is not gonna be enough. We need to add a **layer** to our datatype that will act as a channel for errors.
 
 ```scala mdoc
-withActor { kvActor =>
+{
+  type Error = String
+  type StateLayer[A] = State[Data, A]
+  type ErrorLayer[A] = EitherT[StateLayer, Error, A]
+  type EffectStack[A] = ErrorLayer[A]
 
-  // no glue code needed to instantiate the KeyValueStore
-  val kvStore : KeyValueStore[ComplexEffect] =
-    new ActorKeyValueStore(kvActor, 500.millis)
+  val kvStore : KVStore[EffectStack] =
+    new KVStoreImpl
 
-  // no glue code needed to run the function
-  val resultInEffect : ComplexEffect[Boolean] = test(kvStore)
-
-  // only glue code needed : peeling the various layers
-  resultInEffect
-    .value // peeling error layer
-    .value // peeling option layer
-    .unsafeRunSync() // running async computation
+  verify(kvStore)
+    .value // peeling the error layer
+    .runA(Map.empty) // setting the initial state
+    .value // getting the value
 }
 ```
 
-This essentially means that with zero additional effort, the current logic is compatible with any new logic that will be added to tackle the new concerns.
+This essentially means that with zero additional effort, the current code was able to run against a datatype that supports more capabilities.
 
 ### How does it work though ?
 
-All we did was write both our `KeyValueStore` implementation and our business logic by decalring the minimal set of **capabilities** (typeclasses) they need need to operate. One had declared a `Monad` capability, the other a `LiftIO` one.
+All we did was writing logic by declaring using **capabilities** (typeclasses) rather than concreter **effect datatypes** . By doing so, we've abided by the least power principle : a piece of logic does not have access to more information than what it actually needs, and we've made it more difficult to add code in a place it does not belong.
 
-By doing so, we've abided by the least power principle : a piece of logic does not have access to more information than what it actually needs, and we've made it more difficult to add code in a place it does not belong.
-
-To understand the hierachy of power between capabilities, you can refer yourself to the great [infographic] (https://github.com/tpolecat/cats-infographic) by Rob Norris that describes types provided by the **cats** library, .
-
-Capabilities can often (not always) transit through monad transformers : the glue-code [already exists](https://github.com/typelevel/cats-effect/blob/master/core/shared/src/main/scala/cats/effect/LiftIO.scala#L39) and is thoroughly tested, you don't have to write it yourself.
+Capabilities can often (not always) transit through monad transformers : the glue-code already exists and and is thoroughly tested.
 
 Therefore :
-* `OptionLayer` supports `LiftIO` because `AsyncLayer` supports it.
-* `OptionLayer` supports `Monad` because `AsyncLayer` supports it.
-* `ErrorLayer` supports `LiftIO` because `OptionLayer` supports it.
-* `ErrorLayer` supports `Monad` because `OptionLayer` supports it.
+* `ErrorLayer` supports `Monad` because `StateLayer` supports it.
+* `ErrorLayer` supports `MonadState` because `StateLayer` supports it.
 
-We could also change the order in which `Option` and `Error` layers are stacked together, and the code would still hold.
+We have access to it through the imports of `cats.implicits._` and `cats.mtl.implicits._`
 
-# Capabilities and typeclasses
+### About the ordering of the layers
 
-It does take a fair amount of effort to get acquainted with the various capabilities and build an instinct for which ones you need to solve a particular problem.
+The order in which the layers are stacked can also change :
 
-The reasons why you should learn them are the following :
+```scala mdoc
+{
+  type Error = String
+  // changing order of effects
+  type ErrorLayer[A] = Either[Error, A]
+  type StateLayer[A] = StateT[ErrorLayer, Data, A]
+  type EffectStack[A] = StateLayer[A]
+
+  val kvStore : KVStore[EffectStack] =
+    new KVStoreImpl
+
+  // peeling logic differs
+  verify(kvStore)
+    .runA(Map.empty) // setting the initial state
+}
+```
+
+Since we reason in terms of **capabilities**, the order has no incidence in
+the business logic. It is however worth noting that when you choose the **effect type**, the order can have an impact. For instance, wrapping the state effect in an erroring layer could mean that you wouldn't be able to inspect the state in the event of an error, so it might be better to do the opposite.
+
+Now, let's re-implement the KVStore to cater to the new requirement :
+
+## Version 4
+
+### The implementation
+
+```scala mdoc
+type Error = String
+type ErrorCapa[F[_]] = MonadError[F, String]
+
+class KVStoreImpl2[F[_] : StateCapa : ErrorCapa]
+extends KVStore[F]{
+
+  val state = implicitly[StateCapa[F]]
+  val effect = implicitly[ErrorCapa[F]]
+
+  def put(key : String, value : String) : F[Unit] =
+    state.modify(_ + (key -> value))
+
+  def get(key : String) : F[Option[String]] =
+    state.inspect(map => map.get(key))
+
+  def delete(key : String) : F[Unit] =
+    for {
+      exists <- state.inspect(_.contains(key))
+      _      <- if (exists) state.modify(_ - key)
+                else effect.raiseError(s"not found : $key")
+    } yield {}
+}
+```
+
+### The call site
+
+```scala mdoc
+{
+  type Error = String
+  // changing order of effects
+  type ErrorLayer[A] = Either[Error, A]
+  type StateLayer[A] = StateT[ErrorLayer, Data, A]
+  type EffectStack[A] = StateLayer[A]
+
+  val kvStore : KVStore[EffectStack] =
+    new KVStoreImpl2
+
+  // peeling logic differs
+  verify(kvStore)
+    .runA(Map.empty) // setting the initial state
+}
+```
+
+## A note on capabilities and typeclasses
+
+It does take some learning effort to get acquainted with the various typeclasses and build an instinct for which ones you need to solve a particular problem. However, they are very much worth learning :
 
 * They are minimal. Both **cats** and **scalaz** provide a fair amount of functions, but each interface/typeclass only holds a small number of functions that are completely orthogonal to each other (ie none can be expressed in terms of the others).
-* They are lawful : each method of the interface/typeclass has a reason to exist with relation to its neighbour methods, which is described in (mathematical) **laws**. The rules might have unfamiliar names such as **associativy**, but they allow you to reason consistently about the interface and apply the same patterns no matter the actual concrete datatype you end up using.
-* Although the Scala compiler is not powerful enough to statically check the laws, but **cats** and **scalaz** have implemented them as **reusable tests** that run against generated input sets.
-
+* They are lawful : each method of the interface/typeclass has a reason to exist with relation to its neighbour methods, which is described in (mathematical) **laws**. The rules might have more or less familiar names depending on your education in mathematics (such as **associativy**), but they allow you to reason consistently about the interface, and prevent you from worrying about inexistent edge cases.
+* Although the Scala compiler is not powerful enough to statically check the laws, **cats** and **scalaz** have implemented them as **reusable tests** that run against generated input sets.
 
