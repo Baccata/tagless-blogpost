@@ -1,6 +1,6 @@
 # Tagless-final, to the point.
 
-I have been using tagless final a lot lately. I am very satisfied with the approach, but have not find an article that expresses its value in a "down to earth" way that programmers in the trenches could find convincing. This is my attempt at providing one.
+I have been using tagless final a lot lately. I am very satisfied with the approach, but have not find an article that expresses its value in a "down to earth" kind of way. This is my attempt at providing one.
 
 ## Preambule
 
@@ -28,7 +28,7 @@ import cats.data._
 import cats.implicits._
 ```
 
-Note : this import is quite helpful to discover features from cats. When your knowledge of the library improves, you should strive to import only the necessary rather than wildcards.
+Note : these imports are quite helpful to discover features from cats. When your knowledge of the library improves, you should strive to import only the necessary rather than wildcards.
 
 ## Intro
 
@@ -94,12 +94,11 @@ The tagless interface does not reference `Future`, nor `Id`, nor any other **eff
 
 ### You mentioned "effects" ?
 
-The definition of effect is "a change which is a result or consequence of an action or other cause." When you write a program, you likely have to address some concerns that might have an impact on the overall computation, such as validation, optionality, error handling ... these are effects. In functional programming, effects are usually associated to datatypes that have the **capability** to support/handle them, such as `Either`, `Option`, `Try`.
+The definition of effect is "a change which is a result or consequence of an action or other cause." When you write a program, you likely have to address some concerns that might have an impact on the overall computation, such as validation, optionality, error handling ... these are effects. In functional programming, effects are usually associated to **datatypes** that have the **capability** to support/handle them, such as `Either`, `Option`, `Try`.
 
 ### What if different methods of my interfaces work with different effects ?
 
-The should not. You should always have some reason for grouping
-methods together in an interface, such as some rule binding them :
+The should not : if methods are grouped in an interface, it's an anti-pattern to have one return `Future` and another return `Try`. You should always have some reason for grouping methods together in an interface, such as some rule binding them :
 
 ``` 
 put(K,V) then get(K) should give me V
@@ -120,7 +119,7 @@ As for the typed returned by this expression ? It does not matter when you write
 
 The rule is that each piece of logic should declare the minimal set of **capabilities** the effect type `F` needs to support for it to work. In this case, we need **sequentiality** as the calls need to be composed in a sequential manner (ie the for-comprehension).
 
-That capability of sequentiality is provided by what is often called the **Monad** typeclass (interface). It is the least powerful construct that lets you compose calls sequentially.
+That capability of sequentiality is provided by what is often called the **Monad** typeclass (interface). It lets you compose calls sequentially, which means that the result of one function can be passed as an input to the next.
 
 In the scala ecosystem, the two main libraries that provide that typeclass/interface are [cats](https://github.com/typelevel/cats) and [scalaz](https://github.com/scalaz/scalaz)
 
@@ -137,7 +136,7 @@ def verify[F[_] : Monad] // Declaring the capability the code needs
 }
 ```
 
-### How is that generic function called ?
+### How do I call this generic function ?
 
 It needs an implementation of `KVStore`. Let's go ahead and implement one.
 
@@ -172,17 +171,17 @@ extends KVStore[Id] {
   val kvStore : KVStore[Id] =
     new MutableKVStore(MMap.empty)
 
-  verify(kvStore)
+  verify(kvStore) // Boolean
 }
 ```
 
 We've implemented a dirty/dumb KVStore, and asserted that our generic `test` function works against it.
 
-If you're wondering, it works because a `Monad` instance is provided for `cats.Id`. I recommend implementing one yourself, it is trivially done and can help with building an instinct for the `Monad` abstraction
+If you're wondering, it works because a `Monad` instance is provided for `cats.Id`. I recommend implementing one yourself as an exercise, it is trivial and can help you build an instinct for the `Monad` abstraction.
 
 ## Version 2
 
-As a rule of thumbs, you should avoid relying mutability. That is unless you're implementing a performant-criticial piece of logic. Let's provide an implementation that manipulates state in a referentially transparent manner. For that, we'll use the `State` datatype. Eugene Yokota wrote a decent [blog entry](http://eed3si9n.com/herding-cats/State.html) about it that I recommend to read if you are not familiar with it.
+As a rule of thumbs, you should avoid relying on mutability (unless you're implementing a piece of logic where performance is critical and low-level operations are required). Let's provide an implementation that manipulates state in a referentially transparent manner. For that, we'll use the `State` datatype. Eugene Yokota wrote a decent [blog entry](http://eed3si9n.com/herding-cats/State.html) about it that I recommend to read if you are not familiar with it.
 
 ### The implementation
 
@@ -217,9 +216,9 @@ object StateKVStore extends KVStore[StateEffect]{
 }
 ```
 
-As you can see, even though the **effect type** changed from `Id` to `State`, calling the `verify` method did not require any glue code, because both datatypes support `sequentiality` via the presence of lawful `Monad` typeclass instances.
+As you can see, even though the **effect type** changed from `Id` to `State`, calling the `verify` method did not require any glue code, because both datatypes support `sequentiality` by virtue of having an associated lawful `Monad` instance.
 
-In the `State` iteration, the only difference is the calls to "run" the state and unpack the boolean value, but the `verify` function has remained the same.
+In the `State` iteration, the only difference is the calls to "run" the state and peel the layers to access the boolean value, but the body of the `verify` function has remained the same.
 
 ### Is that it ... ?
 
@@ -228,7 +227,7 @@ Ideally, the implementation also needs to abstract over the **effect context**, 
 Expressing the signature of a construct in terms of **capabilities** rather than **datatypes** is an approach to inversion of control that abides by the least power principle and increases separation of concerns.
 
 The **cats** and **scalaz** ecosystem provides **typeclasses** encoding of
-a fair number of **capabilities**, which are usually enough to express your logic.
+a fair number of **capabilities**, which are usually enough to express most of your logic.
 
 ## Capabilities, typeclasses and datatypes
 
@@ -273,8 +272,8 @@ extends KVStore[F]{
 {
   // StateEffect supports the capability StateCapa
   // needed by the implementation, because cats-mtl
-  // provides an instance of the MonadState typeclasses
-  // for the datatype State
+  // provides an instance of the MonadState typeclass
+  // for the State datatype
   val kvStore : KVStore[StateEffect] =
     new KVStoreImpl
 
@@ -321,13 +320,13 @@ This essentially means that with zero additional effort, the current code was ab
 
 All we did was writing logic by declaring using **capabilities** (typeclasses) rather than concreter **effect datatypes** . By doing so, we've abided by the least power principle : a piece of logic does not have access to more information than what it actually needs, and we've made it more difficult to add code in a place it does not belong.
 
-Capabilities can often (not always) transit through monad transformers : the glue-code already exists and and is thoroughly tested.
+Capabilities can often (not always) transit through monad transformers :
 
 Therefore :
-* `ErrorLayer` supports `Monad` because `StateLayer` supports it.
-* `ErrorLayer` supports `MonadState` because `StateLayer` supports it.
+* `ErrorLayer` supports `Monad` because the `StateLayer` it wraps supports it.
+* `ErrorLayer` supports `MonadState` because the `StateLayer` it wraps supports it.
 
-We have access to it through the imports of `cats.implicits._` and `cats.mtl.implicits._`
+The glue-code already exists and and is thoroughly tested. We gain access to it through the imports of `cats.implicits._` and `cats.mtl.implicits._`.
 
 ### About the ordering of the layers
 
@@ -350,12 +349,12 @@ The order in which the layers are stacked can also change :
 }
 ```
 
-Since we reason in terms of **capabilities**, the order has no incidence in
-the business logic. It is however worth noting that when you choose the **effect type**, the order can have an impact. For instance, wrapping the state effect in an erroring layer could mean that you wouldn't be able to inspect the state in the event of an error, so it might be better to do the opposite.
+Since we reason in terms of **capabilities** rather than concrete **effect datatypess**, the business logic does not have to worry about the ordering of the effects. It is however worth noting that when you choose the **effect type**, the order can have an impact. For instance, wrapping the state effect in an erroring layer could mean that you wouldn't be able to inspect the state in the event of an error, so it might be better to do the opposite.
 
-Now, let's re-implement the KVStore to cater to the new requirement :
 
 ## Version 4
+
+Now that we've established the compatibility of the logic, let's re-implement the KVStore to cater to the new requirement (erroring when removing an abstent key) :
 
 ### The implementation
 
@@ -403,11 +402,30 @@ extends KVStore[F]{
 }
 ```
 
-## A note on capabilities and typeclasses
+Note that we still haven't changed our `verify` function : it does not need to handle errors and therefore its set of capabilities has not changed.
 
-It does take some learning effort to get acquainted with the various typeclasses and build an instinct for which ones you need to solve a particular problem. However, they are very much worth learning :
+Coming from a Java background, this is really liberating for me : the main business logic (`verify`) only needs to express a composition of calls, and it is exempt from the concern of error handling.
 
-* They are minimal. Both **cats** and **scalaz** provide a fair amount of functions, but each interface/typeclass only holds a small number of functions that are completely orthogonal to each other (ie none can be expressed in terms of the others).
-* They are lawful : each method of the interface/typeclass has a reason to exist with relation to its neighbour methods, which is described in (mathematical) **laws**. The rules might have more or less familiar names depending on your education in mathematics (such as **associativy**), but they allow you to reason consistently about the interface, and prevent you from worrying about inexistent edge cases.
-* Although the Scala compiler is not powerful enough to statically check the laws, **cats** and **scalaz** have implemented them as **reusable tests** that run against generated input sets.
+## The case of side-effects
+
+So far, the code we have written has respected the boundaries of the JVM and has lived solely in memory. But most programs need to call upon functionalities that live outside of the JVM and handle calls that are classified as **impure**,
+which means they either rely on the outside world (to know the time, to create a random value), or have an effect on the outside world (printing a value in a terminal, writing to a database)
+
+There is a set of **capabilities** that are specifically designed to reason about these particular concerns and manipulate **impure** computations in a referentially-transparent way. The [cats-effect](https://typelevel.org/cats-effect/) library provides typeclass encoding of these capabilities, as well as **effect datatypes** that support them.
+
+In addition, **cats-effect** provides **capabilities** for capturing callback-based asynchronous calls into the **effect type**, for performing computations concurrently, for scheduling calls, ... as well as low-boilerplate,performant, simple concurrency primitives for non-blocking state manipulation, clean resource-handling, atomicity ...
+
+## The downsides
+
+The approach of **tagless final** is not completely free of downsides :
+
+* It does take some learning effort to get acquainted with the various typeclasses and build an instinct for which ones you need to solve a particular problem.
+* I personally like using [context bounds](https://docs.scala-lang.org/tutorials/FAQ/context-bounds.html) when declaring **capabilities**, which involves using type aliases, and sometimes invoking the implicit instance via `implicitly`. This is a little bit of boilerplate.
+
+The interfaces/typeclasses involved are very much worth exploring :
+
+* The interfaces are minimal. Both **cats** and **scalaz** provide a fair amount of functions, but each interface/typeclass only holds a very small number of abstract core functions that are completely orthogonal to each other (ie none can be expressed in terms of the others), the rest being derived from the core functions.
+* Each method of the interface/typeclass has a reason to exist with relation to its neighbour methods, which is described in (mathematical) **laws**. The rules might have more or less familiar names depending on your education in mathematics (such as **associativy**), but they allow you to reason consistently about the interface, and prevent you from worrying about inexistent edge cases.
+* Although the Scala compiler is not powerful enough to statically check the laws, **cats** and **scalaz** have implemented them as [reusable tests](https://typelevel.org/cats/typeclasses/lawtesting.html) that run against generated input sets.
+* There are more and more libraries that use these interfaces and thus maximise the amount of possible integration. Amongst which : [fs2](https://fs2.io/) and [https://http4s.org/]
 
