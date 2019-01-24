@@ -211,9 +211,10 @@ object StateKVStore extends KVStore[StateEffect]{
   val kvStore : KVStore[StateEffect] =
     StateKVStore
 
-  verify(kvStore)
-    .runA(Map.empty) // setting the initial state
-    .value // getting the value
+                     // Peels :
+  verify(kvStore)    // StateEffect[Boolean]
+    .runA(Map.empty) // Eval[Boolean]
+    .value           // Boolean
 }
 ```
 
@@ -278,9 +279,10 @@ extends KVStore[F]{
   val kvStore : KVStore[StateEffect] =
     new KVStoreImpl
 
-  verify(kvStore)
-    .runA(Map.empty) // setting the initial state
-    .value // getting the value
+                     // Peels :
+  verify(kvStore)    // State[Data, Boolean]
+    .runA(Map.empty) // Eval[Boolean]
+    .value           // Boolean
 }
 ```
 
@@ -306,10 +308,11 @@ If we are to add erroring logic, the `StateEffect` is not gonna be enough. We ne
   val kvStore : KVStore[EffectStack] =
     new KVStoreImpl
 
-  verify(kvStore)
-    .value // peeling the error layer
-    .runA(Map.empty) // setting the initial state
-    .value // getting the value
+                     // Peels :
+  verify(kvStore)    // ErrorLayer[Boolean]
+    .value           // StateLayer[Either[Error, Boolean]]
+    .runA(Map.empty) // Eval[Either[Error, Boolean]]
+    .value           // Either[Error, Boolean]
 }
 ```
 
@@ -342,9 +345,9 @@ The order in which the layers are stacked can also change :
   val kvStore : KVStore[EffectStack] =
     new KVStoreImpl
 
-  // peeling logic differs
-  verify(kvStore)
-    .runA(Map.empty) // setting the initial state
+                     // Peels :
+  verify(kvStore)    // StateLayer[Boolean]
+    .runA(Map.empty) // Either[Error, Boolean]
 }
 ```
 
@@ -395,9 +398,9 @@ extends KVStore[F]{
   val kvStore : KVStore[EffectStack] =
     new KVStoreImpl2
 
-  // peeling logic differs
-  verify(kvStore)
-    .runA(Map.empty) // setting the initial state
+                     // Peels :
+  verify(kvStore)    // StateLayer[Boolean]
+    .runA(Map.empty) // Either[Error, Boolean]
 }
 ```
 
