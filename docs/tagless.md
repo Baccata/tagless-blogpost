@@ -274,7 +274,7 @@ extends KVStore[F]{
   // StateEffect supports the capability StateCapa
   // needed by the implementation, because cats-mtl
   // provides an instance of the MonadState typeclasses
-  // the datatype State
+  // for the datatype State
   val kvStore : KVStore[StateEffect] =
     new KVStoreImpl
 
