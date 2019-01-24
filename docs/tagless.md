@@ -1,7 +1,6 @@
 # Tagless-final, to the point.
 
-I've been using the tagless final a lot lately, and I haven't found a satisfying / down to earth explanation of why it is an extremely useful
-way of structuring programs.
+I have been using tagless final a lot lately. I am very satisfied with the approach, but have not find an article that expresses its value in a "down to earth" way that programmers in the trenches could find convincing. This is my attempt at providing one.
 
 ## Preambule
 
@@ -20,7 +19,7 @@ The only dependencies required to compile the snippets are the following (in SBT
 "org.typelevel" %% "cats-mtl-core" % "0.4.0"
 ```
 
-To reduce the amount of code in each snippet, we're making the following import available everywhere in the article.
+To reduce the amount of code in each snippet, we're making the following imports available to all the snippets in the article .
 
 ```scala mdoc
 // typeclass instances and syntactic sugar
@@ -29,7 +28,7 @@ import cats.data._
 import cats.implicits._
 ```
 
-Note : this import is quite helpful to discover features from cats. When you know what you're doing, you should strive to import only the necessary.
+Note : this import is quite helpful to discover features from cats. When your knowledge of the library improves, you should strive to import only the necessary rather than wildcards.
 
 ## Intro
 
@@ -47,7 +46,7 @@ expressed a fair amount of satisfaction doing so.
 
 ### What is it ?
 
-**tagless final** is essentially a way of writing interfaces (and implementations of these interfaces), which involves abstracting over **effect context**.
+**tagless final** is essentially a way of writing interfaces (and implementations of these interfaces), which involves abstracting over the **effect context**.
 
 ```scala mdoc
 // F[_] is an abstract effect context
